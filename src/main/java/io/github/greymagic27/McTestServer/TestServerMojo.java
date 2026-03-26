@@ -121,7 +121,7 @@ public class TestServerMojo extends AbstractMojo {
         pb.directory(pluginProjectDir.toFile());
         pb.inheritIO();
         Process mvnProcess = pb.start();
-        boolean finished = mvnProcess.waitFor(5, TimeUnit.MINUTES);
+        boolean finished = mvnProcess.waitFor(2, TimeUnit.MINUTES);
         if (!finished || mvnProcess.exitValue() != 0) {
             throw new RuntimeException("Maven packaging failed");
         }
