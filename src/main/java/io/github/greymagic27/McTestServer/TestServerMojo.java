@@ -18,14 +18,27 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Stream;
+import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.AbstractMojo;
+import org.apache.maven.plugin.BuildPluginManager;
+import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
+import org.apache.maven.project.MavenProject;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
-@Mojo(name = "mc-test-server", defaultPhase = LifecyclePhase.PRE_INTEGRATION_TEST)
+import static org.twdata.maven.mojoexecutor.MojoExecutor.artifactId;
+import static org.twdata.maven.mojoexecutor.MojoExecutor.configuration;
+import static org.twdata.maven.mojoexecutor.MojoExecutor.executeMojo;
+import static org.twdata.maven.mojoexecutor.MojoExecutor.executionEnvironment;
+import static org.twdata.maven.mojoexecutor.MojoExecutor.goal;
+import static org.twdata.maven.mojoexecutor.MojoExecutor.groupId;
+import static org.twdata.maven.mojoexecutor.MojoExecutor.plugin;
+import static org.twdata.maven.mojoexecutor.MojoExecutor.version;
+
+@Mojo(name = "mc-test-server", defaultPhase = LifecyclePhase.NONE, threadSafe = true)
 public class TestServerMojo extends AbstractMojo {
 
     private static final HttpClient HTTP = HttpClient.newHttpClient();
@@ -36,19 +49,25 @@ public class TestServerMojo extends AbstractMojo {
     private File targetDir;
     @Parameter(defaultValue = "${project.build.finalName}", readonly = true)
     private String finalName;
-    @Parameter()
+    @Parameter(defaultValue = "${session}", readonly = true)
+    private MavenSession session;
+    @Parameter(defaultValue = "${project}", readonly = true, required = true)
+    private MavenProject project;
+    @Parameter
     private String serverVersion;
+    @Parameter
+    private BuildPluginManager pluginManager;
 
     @Override
     public void execute() {
         try {
             run();
-        } catch (IOException | InterruptedException e) {
+        } catch (IOException | InterruptedException | MojoExecutionException e) {
             throw new RuntimeException(e);
         }
     }
 
-    private void run() throws IOException, InterruptedException {
+    private void run() throws IOException, InterruptedException, MojoExecutionException {
         Path tempDir = Files.createTempDirectory("mc-server-");
         getLog().info("Temp dir: " + tempDir);
         Path pluginsDir = tempDir.resolve("plugins");
@@ -56,8 +75,8 @@ public class TestServerMojo extends AbstractMojo {
         String version = (serverVersion != null && !serverVersion.isBlank()) ? serverVersion : fetchLatestVersion();
         int build = fetchLatestBuild(version);
         Path paperJar = downloadPaper(version, build, tempDir);
+        packagePlugin();
         Path pluginJar = targetDir.toPath().resolve(finalName + ".jar");
-        if (!Files.exists(pluginJar)) throw new RuntimeException("Plugin jar not found: " + pluginJar);
         Files.copy(pluginJar, pluginsDir.resolve(pluginJar.getFileName()), StandardCopyOption.REPLACE_EXISTING);
         for (PluginConfig plugin : plugins) downloadPlugin(plugin, pluginsDir);
         Files.writeString(tempDir.resolve("eula.txt"), "eula=true\n");
@@ -131,6 +150,24 @@ public class TestServerMojo extends AbstractMojo {
         }
     }
 
+    private boolean isStableVersion(String version) {
+        return !version.contains("-");
+    }
+
+    private int compareVersions(String v1, String v2) {
+        String[] parts1 = v1.split("\\.");
+        String[] parts2 = v2.split("\\.");
+        int length = Math.max(parts1.length, parts2.length);
+        for (int i = 0; i < length; i++) {
+            int p1 = i < parts1.length ? Integer.parseInt(parts1[i]) : 0;
+            int p2 = i < parts2.length ? Integer.parseInt(parts2[i]) : 0;
+            if (p1 != p2) {
+                return Integer.compare(p1, p2);
+            }
+        }
+        return 0;
+    }
+
     private void handleConsole(Process process) {
         new Thread(() -> {
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream())); BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(process.getOutputStream()))) {
@@ -148,22 +185,20 @@ public class TestServerMojo extends AbstractMojo {
         }).start();
     }
 
-    private boolean isStableVersion(String version) {
-        return !version.contains("-");
-    }
-
-    private int compareVersions(String v1, String v2) {
-        String[] parts1 = v1.split("\\.");
-        String[] parts2 = v2.split("\\.");
-        int length = Math.max(parts1.length, parts2.length);
-        for (int i = 0; i < length; i++) {
-            int p1 = i < parts1.length ? Integer.parseInt(parts1[i]) : 0;
-            int p2 = i < parts2.length ? Integer.parseInt(parts2[i]) : 0;
-            if (p1 != p2) {
-                return Integer.compare(p1, p2);
-            }
+    private void packagePlugin() throws MojoExecutionException {
+        Path pluginJar = targetDir.toPath().resolve(finalName + ".jar");
+        List<String> goals = session.getGoals();
+        if (Files.exists(pluginJar)) {
+            getLog().warn("Plugin JAR already exists: " + pluginJar);
+            return;
         }
-        return 0;
+        if (!Files.exists(pluginJar) && !goals.contains("package")) {
+            getLog().warn("Plugin JAR not found, running 'mvn clean package'");
+            executeMojo(plugin(groupId("org.apache.maven.plugins"), artifactId("maven-clean-plugin"), version("3.5.0")), goal("clean"), configuration(), executionEnvironment(project, session, pluginManager));
+            executeMojo(plugin(groupId("org.apache.maven.plugins"), artifactId("maven-package-plugin"), version("3.5.0")), goal("jar"), configuration(), executionEnvironment(project, session, pluginManager));
+        }
+        if (!Files.exists(pluginJar)) throw new MojoExecutionException("Plugin JAR still not found after 'mvn clean package: '" + pluginJar);
+        getLog().info("Plugin JAR packaged: " + pluginJar);
     }
 
     public static class PluginConfig {
