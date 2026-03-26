@@ -130,14 +130,15 @@ public class TestServerMojo extends AbstractMojo {
     }
 
     private void packagePlugin() throws IOException, InterruptedException {
-        getLog().info("Packaging plugin using Maven...");
         String buildTool = detectBuildTool();
         Path pluginProjectDir = project.getBasedir().toPath().resolve(".");
         ProcessBuilder pb;
         if ("maven".equalsIgnoreCase(buildTool)) {
+            getLog().info("Packaging plugin using Maven...");
             String mvnCmd = System.getProperty("os.name").toLowerCase().contains("win") ? "mvn.cmd" : "mvn";
             pb = new ProcessBuilder(mvnCmd, "clean", "package");
         } else if ("gradle".equalsIgnoreCase(buildTool)) {
+            getLog().info("Packaging plugin using Gradle...");
             String gradleCmd = System.getProperty("os.name").toLowerCase().contains("win") ? "gradle.bat" : "gradle";
             pb = new ProcessBuilder(gradleCmd, "shadowJar");
         } else {
