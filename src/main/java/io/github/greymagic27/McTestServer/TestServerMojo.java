@@ -117,17 +117,26 @@ public class TestServerMojo extends AbstractMojo {
 
     private void packagePlugin() throws IOException, InterruptedException {
         getLog().info("Packaging plugin using Maven...");
-        String mvnCmd = System.getProperty("os.name").toLowerCase().contains("win") ? "mvn.cmd" : "mvn";
+        String buildTool = detectBuildTool();
         Path pluginProjectDir = project.getBasedir().toPath().resolve(".");
-        ProcessBuilder pb = new ProcessBuilder(mvnCmd, "clean", "package");
+        ProcessBuilder pb;
+        if ("maven".equalsIgnoreCase(buildTool)) {
+            String mvnCmd = System.getProperty("os.name").toLowerCase().contains("win") ? "mvn.cmd" : "mvn";
+            pb = new ProcessBuilder(mvnCmd, "clean", "package");
+        } else if ("gradle".equalsIgnoreCase(buildTool)) {
+            String gradleCmd = System.getProperty("os.name").toLowerCase().contains("win") ? "gradle.bat" : "gradle";
+            pb = new ProcessBuilder(gradleCmd, "shadowJar");
+        } else {
+            throw new RuntimeException("Unknown build tool: " + buildTool);
+        }
         pb.directory(pluginProjectDir.toFile());
         pb.inheritIO();
-        Process mvnProcess = pb.start();
-        boolean finished = mvnProcess.waitFor(2, TimeUnit.MINUTES);
-        if (!finished || mvnProcess.exitValue() != 0) {
-            throw new RuntimeException("Maven packaging failed");
+        Process buildProcess = pb.start();
+        boolean finished = buildProcess.waitFor(2, TimeUnit.MINUTES);
+        if (!finished || buildProcess.exitValue() != 0) {
+            throw new RuntimeException(buildTool.substring(0, 1).toUpperCase() + buildTool.substring(1) + " build failed");
         }
-        getLog().info("Plugin packaged successfully");
+        getLog().info(buildTool.substring(0, 1).toUpperCase() + buildTool.substring(1) + " build completed successfully");
     }
 
     private Path findPluginJar() throws IOException {
@@ -223,6 +232,19 @@ public class TestServerMojo extends AbstractMojo {
         Path out = pluginDir.resolve(plugin.name.endsWith(".jar") ? plugin.name : plugin.name + ".jar");
         getLog().info("Downloading additional plugin: " + plugin.name + " from " + plugin.url);
         HTTP.send(HttpRequest.newBuilder().uri(URI.create(plugin.url)).build(), HttpResponse.BodyHandlers.ofFile(out));
+    }
+
+    private String detectBuildTool() {
+        Path base = project.getBasedir().toPath();
+        if (Files.exists(base.resolve("pom.xml"))) {
+            getLog().info("Detected maven");
+            return "maven";
+        }
+        if (Files.exists(base.resolve("build.gradle")) || Files.exists(base.resolve("build.gradle.kts"))) {
+            getLog().info("Detected gradle");
+            return "gradle";
+        }
+        throw new RuntimeException("No build tool detected in " + base);
     }
 
     private static class PluginConfig {
