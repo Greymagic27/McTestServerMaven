@@ -141,9 +141,14 @@ public class TestServerMojo extends AbstractMojo {
         JsonNode root = MAPPER.readTree(res.body());
         JsonNode versions = root.get("versions");
         List<String> stableVersions = new ArrayList<>();
-        for (JsonNode v : versions) {
-            if (v.isString()) {
-                String version = v.asString();
+        for (JsonNode vNode : versions) {
+            if (vNode.isArray()) {
+                for (JsonNode inner : vNode) {
+                    String version = inner.asString();
+                    if (isStableVersion(version)) stableVersions.add(version);
+                }
+            } else if (vNode.isString()) {
+                String version = vNode.asString();
                 if (isStableVersion(version)) stableVersions.add(version);
             }
         }
