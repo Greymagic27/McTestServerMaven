@@ -55,7 +55,7 @@ public class TestServerMojo extends AbstractMojo {
     private MavenProject project;
     @Parameter
     private String serverVersion;
-    @Parameter
+    @Parameter(defaultValue = "${pluginManager}", readonly = true, required = true)
     private BuildPluginManager pluginManager;
 
     @Override
@@ -201,7 +201,7 @@ public class TestServerMojo extends AbstractMojo {
         getLog().info("Plugin JAR packaged: " + pluginJar);
     }
 
-    public static class PluginConfig {
+    private static class PluginConfig {
         public String name;
         public String url;
     }
