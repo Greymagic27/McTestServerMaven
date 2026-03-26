@@ -91,7 +91,11 @@ public class TestServerMojo extends AbstractMojo {
                 throw new RuntimeException("Failed to download PaperMC", e);
             }
         });
-        CompletableFuture.allOf(packageFuture, paperFuture).join();
+        try {
+            CompletableFuture.allOf(packageFuture, paperFuture).join();
+        } catch (RuntimeException e) {
+            throw new MojoExecutionException("Async task failed", e.getCause());
+        }
         Path pluginJar = findPluginJar();
         if (pluginJar == null) throw new RuntimeException("Plugin JAR not found after packaging");
         Files.copy(pluginJar, pluginDir.resolve(pluginJar.getFileName()), StandardCopyOption.REPLACE_EXISTING);
