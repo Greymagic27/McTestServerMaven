@@ -195,7 +195,7 @@ public class TestServerMojo extends AbstractMojo {
         if (!Files.exists(pluginJar) && !goals.contains("package")) {
             getLog().warn("Plugin JAR not found, running 'mvn clean package'");
             executeMojo(plugin(groupId("org.apache.maven.plugins"), artifactId("maven-clean-plugin"), version("3.5.0")), goal("clean"), configuration(), executionEnvironment(project, session, pluginManager));
-            executeMojo(plugin(groupId("org.apache.maven.plugins"), artifactId("maven-package-plugin"), version("3.5.0")), goal("jar"), configuration(), executionEnvironment(project, session, pluginManager));
+            executeMojo(plugin(groupId("org.apache.maven.plugins"), artifactId("maven-jar-plugin"), version("3.5.0")), goal("package"), configuration(), executionEnvironment(project, session, pluginManager));
         }
         if (!Files.exists(pluginJar)) throw new MojoExecutionException("Plugin JAR still not found after 'mvn clean package: '" + pluginJar);
         getLog().info("Plugin JAR packaged: " + pluginJar);
