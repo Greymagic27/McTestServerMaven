@@ -27,7 +27,6 @@ import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
-import org.jspecify.annotations.NonNull;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -107,7 +106,7 @@ public class TestServerMojo extends AbstractMojo {
         pb.directory(tempServerDir.toFile());
         pb.redirectErrorStream(true);
         Process serverProcess = pb.start();
-        handleConsole(serverProcess);
+        handleConsole(serverProcess, tempServerDir);
         try {
             int exitCode = serverProcess.waitFor();
             if (exitCode != 0) throw new MojoExecutionException("Test server failed to start, exit code: " + exitCode);
@@ -199,16 +198,23 @@ public class TestServerMojo extends AbstractMojo {
         return jarPath;
     }
 
-    private void handleConsole(Process process) {
+    private void handleConsole(Process process, Path tempServerDir) {
         Thread consoleThread = new Thread(() -> {
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream())); BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(process.getOutputStream())); BufferedReader userInput = new BufferedReader(new InputStreamReader(System.in))) {
                 Thread outputThread = getThread(reader, writer);
                 outputThread.start();
                 String input;
                 while ((input = userInput.readLine()) != null) {
-                    writer.write(input + "\n");
-                    writer.flush();
+                    input = input.trim();
+                    if ("m".equalsIgnoreCase(input)) {
+                        getLog().info("Opening server directory: " + tempServerDir);
+                        openFolder(tempServerDir);
+                    } else {
+                        writer.write(input + "\n");
+                        writer.flush();
+                    }
                 }
+
             } catch (IOException e) {
                 getLog().error("Console handling error", e);
             }
@@ -217,7 +223,7 @@ public class TestServerMojo extends AbstractMojo {
         consoleThread.start();
     }
 
-    private @NonNull Thread getThread(BufferedReader reader, BufferedWriter writer) {
+    private Thread getThread(BufferedReader reader, BufferedWriter writer) {
         Thread outputThread = new Thread(() -> {
             String line;
             try {
@@ -266,6 +272,10 @@ public class TestServerMojo extends AbstractMojo {
             return "gradle";
         }
         throw new RuntimeException("No build tool detected in " + base);
+    }
+
+    private void openFolder(Path folder) throws IOException {
+        new ProcessBuilder("explorer.exe", folder.toAbsolutePath().toString()).start();
     }
 
     private static class PluginConfig {
