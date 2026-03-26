@@ -70,7 +70,7 @@ public class TestServerMojo extends AbstractMojo {
         }
     }
 
-    private void run() throws IOException, InterruptedException, ExecutionException {
+    private void run() throws IOException, InterruptedException, ExecutionException, MojoExecutionException {
         Path tempServerDir = Files.createTempDirectory("mc-server-");
         getLog().info("Temp server directory: " + tempServerDir);
         Path pluginDir = tempServerDir.resolve("plugins");
@@ -104,7 +104,7 @@ public class TestServerMojo extends AbstractMojo {
         Process serverProcess = pb.start();
         handleConsole(serverProcess);
         int exitCode = serverProcess.waitFor();
-        getLog().info("Server exited with code: " + exitCode);
+        if (exitCode != 0) throw new MojoExecutionException("Test server failed to start, exit code: " + exitCode);
         deleteRecursive(tempServerDir);
     }
 
