@@ -18,10 +18,8 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Stream;
-import javax.inject.Inject;
-import org.apache.maven.execution.MavenSession;
+import org.apache.maven.cli.MavenCli;
 import org.apache.maven.plugin.AbstractMojo;
-import org.apache.maven.plugin.BuildPluginManager;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
@@ -29,15 +27,6 @@ import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
-
-import static org.twdata.maven.mojoexecutor.MojoExecutor.artifactId;
-import static org.twdata.maven.mojoexecutor.MojoExecutor.configuration;
-import static org.twdata.maven.mojoexecutor.MojoExecutor.executeMojo;
-import static org.twdata.maven.mojoexecutor.MojoExecutor.executionEnvironment;
-import static org.twdata.maven.mojoexecutor.MojoExecutor.goal;
-import static org.twdata.maven.mojoexecutor.MojoExecutor.groupId;
-import static org.twdata.maven.mojoexecutor.MojoExecutor.plugin;
-import static org.twdata.maven.mojoexecutor.MojoExecutor.version;
 
 @Mojo(name = "mc-test-server", defaultPhase = LifecyclePhase.NONE, threadSafe = true)
 public class TestServerMojo extends AbstractMojo {
@@ -50,14 +39,10 @@ public class TestServerMojo extends AbstractMojo {
     private File targetDir;
     @Parameter(defaultValue = "${project.build.finalName}", readonly = true)
     private String finalName;
-    @Parameter(defaultValue = "${session}", readonly = true)
-    private MavenSession session;
     @Parameter(defaultValue = "${project}", readonly = true, required = true)
     private MavenProject project;
     @Parameter
     private String serverVersion;
-    @Inject
-    private BuildPluginManager pluginManager;
 
     @Override
     public void execute() {
@@ -189,9 +174,10 @@ public class TestServerMojo extends AbstractMojo {
     private void packagePlugin() throws MojoExecutionException {
         Path pluginJar = targetDir.toPath().resolve(finalName + ".jar");
         getLog().warn("Running 'mvn clean package: '" + pluginJar);
-        executeMojo(plugin(groupId("org.apache.maven.plugins"), artifactId("maven-clean-plugin"), version("3.5.0")), goal("clean"), configuration(), executionEnvironment(project, session, pluginManager));
-        executeMojo(plugin(groupId("org.apache.maven.plugins"), artifactId("maven-jar-plugin"), version("3.5.0")), goal("package"), configuration(), executionEnvironment(project, session, pluginManager));
-        if (!Files.exists(pluginJar)) throw new MojoExecutionException("Plugin JAR not found after 'mvn clean package: '" + pluginJar);
+        MavenCli cli = new MavenCli();
+        int result = cli.doMain(new String[]{"clean", "package"}, project.getBasedir().getAbsolutePath(), System.out, System.out);
+        if (result != 0) throw new MojoExecutionException("'mvn clean package' failed with exit code: " + result);
+        if (!Files.exists(pluginJar)) throw new MojoExecutionException("Plugin JaR not found after 'mvn clean package': " + pluginJar);
         getLog().info("Plugin JAR packaged: " + pluginJar);
     }
 
