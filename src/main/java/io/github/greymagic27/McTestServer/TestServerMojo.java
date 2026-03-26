@@ -36,6 +36,8 @@ public class TestServerMojo extends AbstractMojo {
     private static final HttpClient HTTP = HttpClient.newHttpClient();
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
+    private Process serverProcess;
+
     @Parameter
     private String serverVersion;
 
@@ -44,6 +46,9 @@ public class TestServerMojo extends AbstractMojo {
 
     @Parameter(defaultValue = "${project}", readonly = true)
     private MavenProject project;
+
+    @Parameter(defaultValue = "false", property = "false")
+    private boolean AACH;
 
     private static boolean isStableVersion(String v) {
         return !v.contains("-");
@@ -99,27 +104,19 @@ public class TestServerMojo extends AbstractMojo {
         Path pluginJar = findPluginJar();
         if (pluginJar == null) throw new RuntimeException("Plugin JAR not found after packaging");
         Files.copy(pluginJar, pluginDir.resolve(pluginJar.getFileName()), StandardCopyOption.REPLACE_EXISTING);
+        if (pluginJar.getFileName().toString().contains("advanced-achievements-plugin") && AACH) {
+            getLog().info("Applying custom config for advanced-achievements-plugin due to AACH=true...");
+            AACH_CUSTOM_CONFIG.setRestrictCreativeAACH(pluginDir);
+            AACH_CUSTOM_CONFIG.addDisabledCategoriesAACH(pluginDir, List.of("JobsReborn"));
+        }
         for (PluginConfig plugin : additionalPlugins) downloadPlugin(plugin, pluginDir);
         Path paperJar = paperFuture.get();
         Files.writeString(tempServerDir.resolve("eula.txt"), "eula=true\n", StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
         ProcessBuilder pb = new ProcessBuilder("java", "-Xmx2G", "-jar", paperJar.toString(), "nogui");
         pb.directory(tempServerDir.toFile());
         pb.redirectErrorStream(true);
-        Process serverProcess = pb.start();
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            if (serverProcess.isAlive()) {
-                try {
-                    getLog().warn("Shutting down server");
-                    BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(serverProcess.getOutputStream()));
-                    writer.write("stop\n");
-                    writer.flush();
-                    serverProcess.waitFor(10, TimeUnit.SECONDS);
-                } catch (InterruptedException | IOException e) {
-                    getLog().error("Failed to stop server cleanly, killing process", e);
-                    serverProcess.destroyForcibly();
-                }
-            }
-        }));
+        serverProcess = pb.start();
+        Runtime.getRuntime().addShutdownHook(new Thread(this::stopServer));
         handleConsole(serverProcess, tempServerDir);
         try {
             int exitCode = serverProcess.waitFor();
@@ -246,6 +243,7 @@ public class TestServerMojo extends AbstractMojo {
                     System.out.println(line);
                     if (line.contains("Done (")) {
                         writer.write("op Greymagic27\n");
+                        writer.write("gamemode creative Greymagic27\n");
                         writer.flush();
                     }
                 }
@@ -287,6 +285,24 @@ public class TestServerMojo extends AbstractMojo {
             return "gradle";
         }
         throw new RuntimeException("No build tool detected in " + base);
+    }
+
+    private void stopServer() {
+        if (serverProcess != null && serverProcess.isAlive()) {
+            try {
+                getLog().warn("Stopping server...");
+                BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(serverProcess.getOutputStream()));
+                writer.write("stop\n");
+                writer.flush();
+                if (!serverProcess.waitFor(5, TimeUnit.SECONDS)) {
+                    getLog().warn("Server didn't stop in time, killing forcibly");
+                    serverProcess.destroyForcibly();
+                }
+            } catch (IOException | InterruptedException e) {
+                getLog().error("Failed to stop server cleanly, killing forcibly", e);
+                serverProcess.destroyForcibly();
+            }
+        }
     }
 
     private void openFolder(Path folder) throws IOException {
