@@ -15,6 +15,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Stream;
@@ -24,6 +25,12 @@ import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
+import org.apache.maven.shared.invoker.DefaultInvocationRequest;
+import org.apache.maven.shared.invoker.DefaultInvoker;
+import org.apache.maven.shared.invoker.InvocationRequest;
+import org.apache.maven.shared.invoker.InvocationResult;
+import org.apache.maven.shared.invoker.Invoker;
+import org.apache.maven.shared.invoker.MavenInvocationException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -170,21 +177,20 @@ public class TestServerMojo extends AbstractMojo {
         }).start();
     }
 
-    private void packagePlugin() throws MojoExecutionException, IOException, InterruptedException {
+    @SuppressWarnings("deprecation")
+    private void packagePlugin() throws MojoExecutionException {
         Path pluginJar = targetDir.toPath().resolve(finalName + ".jar");
         getLog().warn("Running 'mvn clean package: '" + pluginJar);
-        ProcessBuilder pb = new ProcessBuilder("mvn", "clean", "package");
-        pb.directory(project.getBasedir());
-        pb.redirectErrorStream(true);
-        Process process = pb.start();
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                getLog().info(line);
-            }
+        Invoker invoker = new DefaultInvoker();
+        InvocationRequest request = new DefaultInvocationRequest();
+        request.setBaseDirectory(project.getBasedir());
+        request.setGoals(Arrays.asList("clean", "package"));
+        try {
+            InvocationResult result = invoker.execute(request);
+            if (result.getExitCode() != 0) throw new MojoExecutionException("'mvn clean package' failed with exit code: " + result.getExitCode());
+        } catch (MavenInvocationException e) {
+            throw new MojoExecutionException("Error running maven", e);
         }
-        int result = process.waitFor();
-        if (result != 0) throw new MojoExecutionException("'mvn clean package' failed with exit code: " + result);
     }
 
     private static class PluginConfig {
