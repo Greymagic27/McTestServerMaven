@@ -106,8 +106,17 @@ public class TestServerMojo extends AbstractMojo {
         Files.copy(pluginJar, pluginDir.resolve(pluginJar.getFileName()), StandardCopyOption.REPLACE_EXISTING);
         if (pluginJar.getFileName().toString().contains("advanced-achievements-plugin") && AACH) {
             getLog().info("Applying custom config for advanced-achievements-plugin due to AACH=true...");
+            AACH_CUSTOM_CONFIG.applyCustomConfig(pluginDir);
             AACH_CUSTOM_CONFIG.setRestrictCreativeAACH(pluginDir);
             AACH_CUSTOM_CONFIG.addDisabledCategoriesAACH(pluginDir, List.of("JobsReborn"));
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                try {
+                    AACH_CUSTOM_CONFIG.restoreOriginalConfig(pluginDir);
+                    getLog().info("Restored original advanced-achievements-plugin config.yml");
+                } catch (IOException e) {
+                    getLog().error("Failed to restore advanced-achievements-plugin config.yml", e);
+                }
+            }));
         }
         for (PluginConfig plugin : additionalPlugins) downloadPlugin(plugin, pluginDir);
         Path paperJar = paperFuture.get();

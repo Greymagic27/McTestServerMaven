@@ -7,6 +7,27 @@ import java.nio.file.StandardOpenOption;
 import java.util.List;
 
 public class AACH_CUSTOM_CONFIG {
+
+    private static String backupContent = null;
+
+    public static void applyCustomConfig(Path pluginDir) throws IOException {
+        Path pluginConfig = pluginDir.resolve("advanced-achievements-plugin/config.yml");
+        if (!Files.exists(pluginConfig)) {
+            Files.createDirectories(pluginConfig.getParent());
+            Files.createFile(pluginConfig);
+        }
+        backupContent = Files.readString(pluginConfig);
+        setRestrictCreativeAACH(pluginDir);
+        addDisabledCategoriesAACH(pluginDir, List.of("JobsReborn"));
+    }
+
+    public static void restoreOriginalConfig(Path pluginDir) throws IOException {
+        if (backupContent == null) return;
+        Path pluginConfig = pluginDir.resolve("advanced-achievements-plugin/config.yml");
+        Files.writeString(pluginConfig, backupContent, StandardOpenOption.TRUNCATE_EXISTING);
+        backupContent = null;
+    }
+
     public static void setRestrictCreativeAACH(Path pluginDir) throws IOException {
         Path pluginConfig = pluginDir.resolve("advanced-achievements-plugin/config.yml");
         if (!Files.exists(pluginConfig)) return;
@@ -20,7 +41,6 @@ public class AACH_CUSTOM_CONFIG {
             }
         }
         if (!found) lines.add("restrictCreative: true");
-
         Files.write(pluginConfig, lines, StandardOpenOption.TRUNCATE_EXISTING);
     }
 
