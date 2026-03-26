@@ -106,6 +106,20 @@ public class TestServerMojo extends AbstractMojo {
         pb.directory(tempServerDir.toFile());
         pb.redirectErrorStream(true);
         Process serverProcess = pb.start();
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            if (serverProcess.isAlive()) {
+                try {
+                    getLog().warn("Shutting down server");
+                    BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(serverProcess.getOutputStream()));
+                    writer.write("stop\n");
+                    writer.flush();
+                    serverProcess.waitFor(10, TimeUnit.SECONDS);
+                } catch (InterruptedException | IOException e) {
+                    getLog().error("Failed to stop server cleanly, killing process", e);
+                    serverProcess.destroyForcibly();
+                }
+            }
+        }));
         handleConsole(serverProcess, tempServerDir);
         try {
             int exitCode = serverProcess.waitFor();
