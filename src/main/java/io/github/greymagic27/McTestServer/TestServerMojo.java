@@ -10,14 +10,16 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.net.http.HttpResponse.BodyHandlers;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
@@ -25,12 +27,6 @@ import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
-import org.apache.maven.shared.invoker.DefaultInvocationRequest;
-import org.apache.maven.shared.invoker.DefaultInvoker;
-import org.apache.maven.shared.invoker.InvocationRequest;
-import org.apache.maven.shared.invoker.InvocationResult;
-import org.apache.maven.shared.invoker.Invoker;
-import org.apache.maven.shared.invoker.MavenInvocationException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -39,47 +35,104 @@ public class TestServerMojo extends AbstractMojo {
 
     private static final HttpClient HTTP = HttpClient.newHttpClient();
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    @Parameter
-    private final List<PluginConfig> plugins = new ArrayList<>();
-    @Parameter(defaultValue = "${project.build.directory}", readonly = true)
-    private File targetDir;
-    @Parameter(defaultValue = "${project.build.finalName}", readonly = true)
-    private String finalName;
-    @Parameter(defaultValue = "${project}", readonly = true, required = true)
-    private MavenProject project;
+
     @Parameter
     private String serverVersion;
 
+    @Parameter
+    private List<PluginConfig> additionalPlugins = new ArrayList<>();
+
+    @Parameter(defaultValue = "${project}", readonly = true)
+    private MavenProject project;
+
+    @Parameter(defaultValue = "${project.build.directory}", readonly = true)
+    private File targetDir;
+
+    private static boolean isStableVersion(String v) {
+        return !v.contains("-");
+    }
+
+    private static int compareVersions(String v1, String v2) {
+        String[] p1 = v1.split("\\.");
+        String[] p2 = v2.split("\\.");
+        int len = Math.max(p1.length, p2.length);
+        for (int i = 0; i < len; i++) {
+            int n1 = i < p1.length ? Integer.parseInt(p1[i]) : 0;
+            int n2 = i < p2.length ? Integer.parseInt(p2[i]) : 0;
+            if (n1 != n2) return Integer.compare(n1, n2);
+        }
+        return 0;
+    }
+
     @Override
-    public void execute() {
+    public void execute() throws MojoExecutionException {
         try {
             run();
-        } catch (IOException | InterruptedException | MojoExecutionException e) {
+        } catch (IOException | InterruptedException e) {
+            throw new MojoExecutionException("Failed to run test server", e);
+        } catch (ExecutionException e) {
             throw new RuntimeException(e);
         }
     }
 
-    private void run() throws IOException, InterruptedException, MojoExecutionException {
-        Path tempDir = Files.createTempDirectory("mc-server-");
-        getLog().info("Temp dir: " + tempDir);
-        Path pluginsDir = tempDir.resolve("plugins");
-        Files.createDirectories(pluginsDir);
-        String version = (serverVersion != null && !serverVersion.isBlank()) ? serverVersion : fetchLatestVersion();
-        int build = fetchLatestBuild(version);
-        Path paperJar = downloadPaper(version, build, tempDir);
-        packagePlugin();
-        Path pluginJar = targetDir.toPath().resolve(finalName + ".jar");
-        Files.copy(pluginJar, pluginsDir.resolve(pluginJar.getFileName()), StandardCopyOption.REPLACE_EXISTING);
-        for (PluginConfig plugin : plugins) downloadPlugin(plugin, pluginsDir);
-        Files.writeString(tempDir.resolve("eula.txt"), "eula=true\n");
-        ProcessBuilder pb = new ProcessBuilder("java", "-Xms2G", "-Xmx4G", "-XX:+UseCompactObjectHeaders", "-XX:+AlwaysPreTouch", "-XX:+UseStringDeduplication", "-XX:+UseZGC", "-jar", paperJar.toString(), "nogui");
-        pb.directory(tempDir.toFile());
+    private void run() throws IOException, InterruptedException, ExecutionException {
+        Path tempServerDir = Files.createTempDirectory("mc-server-");
+        getLog().info("Temp server directory: " + tempServerDir);
+        Path pluginDir = tempServerDir.resolve("plugins");
+        Files.createDirectories(pluginDir);
+        String mcVersion = (serverVersion != null && !serverVersion.isBlank()) ? serverVersion : fetchLatestVersion();
+        int build = fetchLatestBuild(mcVersion);
+        CompletableFuture<Void> packageFuture = CompletableFuture.runAsync(() -> {
+            try {
+                packagePlugin();
+            } catch (IOException | InterruptedException e) {
+                throw new RuntimeException("Failed to package plugin", e);
+            }
+        });
+        CompletableFuture<Path> paperFuture = CompletableFuture.supplyAsync(() -> {
+            try {
+                return downloadPaper(mcVersion, build, tempServerDir);
+            } catch (IOException | InterruptedException e) {
+                throw new RuntimeException("Failed to download PaperMC", e);
+            }
+        });
+        CompletableFuture.allOf(packageFuture, paperFuture).join();
+        Path pluginJar = findPluginJar();
+        if (pluginJar == null) throw new RuntimeException("Plugin JAR not found after packaging");
+        Files.copy(pluginJar, pluginDir.resolve(pluginJar.getFileName()), StandardCopyOption.REPLACE_EXISTING);
+        for (PluginConfig plugin : additionalPlugins) downloadPlugin(plugin, pluginDir);
+        Path paperJar = paperFuture.get();
+        Files.writeString(tempServerDir.resolve("eula.txt"), "eula=true\n", StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+        ProcessBuilder pb = new ProcessBuilder("java", "-Xmx2G", "-jar", paperJar.toString(), "nogui");
+        pb.directory(tempServerDir.toFile());
         pb.redirectErrorStream(true);
-        Process process = pb.start();
-        handleConsole(process);
-        int ec = process.waitFor();
-        getLog().info("Server exited with code: " + ec);
-        deleteRecursive(tempDir);
+        Process serverProcess = pb.start();
+        handleConsole(serverProcess);
+        int exitCode = serverProcess.waitFor();
+        getLog().info("Server exited with code: " + exitCode);
+        deleteRecursive(tempServerDir);
+    }
+
+    private void packagePlugin() throws IOException, InterruptedException {
+        getLog().info("Packaging plugin using Maven...");
+        String mvnCmd = System.getProperty("os.name").toLowerCase().contains("win") ? "mvn.cmd" : "mvn";
+        Path pluginProjectDir = project.getBasedir().toPath().resolve(".");
+        ProcessBuilder pb = new ProcessBuilder(mvnCmd, "clean", "package");
+        pb.directory(pluginProjectDir.toFile());
+        pb.inheritIO();
+        Process mvnProcess = pb.start();
+        boolean finished = mvnProcess.waitFor(5, TimeUnit.MINUTES);
+        if (!finished || mvnProcess.exitValue() != 0) {
+            throw new RuntimeException("Maven packaging failed");
+        }
+        getLog().info("Plugin packaged successfully");
+    }
+
+    private Path findPluginJar() throws IOException {
+        Path pluginTarget = targetDir.toPath();
+        try (Stream<Path> files = Files.list(pluginTarget)) {
+            return files.filter(f -> f.getFileName().toString().endsWith(".jar")).findFirst().orElse(null);
+        }
     }
 
     private String fetchLatestVersion() throws IOException, InterruptedException {
@@ -87,77 +140,38 @@ public class TestServerMojo extends AbstractMojo {
         HttpResponse<String> res = HTTP.send(req, HttpResponse.BodyHandlers.ofString());
         JsonNode root = MAPPER.readTree(res.body());
         JsonNode versions = root.get("versions");
-        if (versions == null || !versions.isObject()) throw new RuntimeException("Invalid JSON Response: 'versions' is missing or is not an object");
-        List<String> majorVersions = new ArrayList<>();
-        versions.propertyNames().forEach(v -> {
-            if (isStableVersion(v)) majorVersions.add(v);
-        });
-        if (majorVersions.isEmpty()) throw new RuntimeException("No major versions found");
-        majorVersions.sort((v1, v2) -> compareVersions(v2, v1));
-        JsonNode patchVersions = versions.get(majorVersions.getFirst());
-        List<String> stablePatches = new ArrayList<>();
-        for (JsonNode n : patchVersions) {
-            String v = n.asString();
-            if (isStableVersion(v)) stablePatches.add(v);
+        List<String> stableVersions = new ArrayList<>();
+        for (JsonNode v : versions) {
+            if (v.isString() && isStableVersion(v.asString())) {
+                stableVersions.add(v.asString());
+            }
         }
-        if (stablePatches.isEmpty()) throw new RuntimeException("No stable patch versions found for " + majorVersions.getFirst());
-        stablePatches.sort((v1, v2) -> compareVersions(v2, v1));
-        String latestVersion = stablePatches.getFirst();
-        getLog().info("Latest version " + latestVersion);
-        return latestVersion;
+        stableVersions.sort((v1, v2) -> compareVersions(v2, v1));
+        String latest = stableVersions.getFirst();
+        getLog().info("Latest PaperMC version: " + latest);
+        return latest;
     }
 
     private int fetchLatestBuild(String version) throws IOException, InterruptedException {
-        HttpResponse<String> res = HTTP.send(HttpRequest.newBuilder().uri(URI.create("https://fill.papermc.io/v3/projects/paper/versions/" + version + "/builds")).build(), BodyHandlers.ofString());
+        HttpRequest req = HttpRequest.newBuilder().uri(URI.create("https://fill.papermc.io/v3/projects/paper/versions/" + version + "/builds")).build();
+        HttpResponse<String> res = HTTP.send(req, HttpResponse.BodyHandlers.ofString());
         JsonNode builds = MAPPER.readTree(res.body());
         int max = -1;
-        for (JsonNode b : builds) max = Math.max(max, b.get("id").asInt());
+        for (JsonNode b : builds) {
+            int id = b.get("id").asInt();
+            max = Math.max(max, id);
+        }
         return max;
     }
 
     private Path downloadPaper(String version, int build, Path dir) throws IOException, InterruptedException {
         String metaUrl = "https://fill.papermc.io/v3/projects/paper/versions/" + version + "/builds/" + build;
         HttpResponse<String> res = HTTP.send(HttpRequest.newBuilder().uri(URI.create(metaUrl)).build(), HttpResponse.BodyHandlers.ofString());
-        JsonNode root = MAPPER.readTree(res.body());
-        String downloadUrl = root.get("downloads").get("server:default").get("url").asString();
-        Path jar = dir.resolve("paper.jar");
-        HTTP.send(HttpRequest.newBuilder().uri(URI.create(downloadUrl)).build(), HttpResponse.BodyHandlers.ofFile(jar));
-        return jar;
-    }
-
-    private void downloadPlugin(PluginConfig plugin, Path pluginsDir) throws IOException, InterruptedException {
-        Path out = pluginsDir.resolve(plugin.name);
-        HTTP.send(HttpRequest.newBuilder().uri(URI.create(plugin.url)).build(), HttpResponse.BodyHandlers.ofFile(out));
-    }
-
-    private void deleteRecursive(Path path) throws IOException {
-        try (Stream<Path> walk = Files.walk(path)) {
-            walk.sorted(Comparator.reverseOrder()).forEach(p -> {
-                try {
-                    Files.delete(p);
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
-            });
-        }
-    }
-
-    private boolean isStableVersion(String version) {
-        return !version.contains("-");
-    }
-
-    private int compareVersions(String v1, String v2) {
-        String[] parts1 = v1.split("\\.");
-        String[] parts2 = v2.split("\\.");
-        int length = Math.max(parts1.length, parts2.length);
-        for (int i = 0; i < length; i++) {
-            int p1 = i < parts1.length ? Integer.parseInt(parts1[i]) : 0;
-            int p2 = i < parts2.length ? Integer.parseInt(parts2[i]) : 0;
-            if (p1 != p2) {
-                return Integer.compare(p1, p2);
-            }
-        }
-        return 0;
+        JsonNode downloads = MAPPER.readTree(res.body()).get("downloads");
+        String downloadUrl = downloads.get("server:default").get("url").asString();
+        Path jarPath = dir.resolve("paper.jar");
+        HTTP.send(HttpRequest.newBuilder().uri(URI.create(downloadUrl)).build(), HttpResponse.BodyHandlers.ofFile(jarPath));
+        return jarPath;
     }
 
     private void handleConsole(Process process) {
@@ -167,7 +181,7 @@ public class TestServerMojo extends AbstractMojo {
                 while ((line = reader.readLine()) != null) {
                     System.out.println(line);
                     if (line.contains("Done (")) {
-                        writer.write("op greymagic27\n");
+                        writer.write("op Greymagic27\n");
                         writer.flush();
                     }
                 }
@@ -177,25 +191,29 @@ public class TestServerMojo extends AbstractMojo {
         }).start();
     }
 
-    @SuppressWarnings("deprecation")
-    private void packagePlugin() throws MojoExecutionException {
-        Path pluginJar = targetDir.toPath().resolve(finalName + ".jar");
-        getLog().warn("Running 'mvn clean package: '" + pluginJar);
-        Invoker invoker = new DefaultInvoker();
-        InvocationRequest request = new DefaultInvocationRequest();
-        request.setBaseDirectory(project.getBasedir());
-        request.setGoals(Arrays.asList("clean", "package"));
-        request.setBatchMode(true);
-        try {
-            InvocationResult result = invoker.execute(request);
-            if (result.getExitCode() != 0) throw new MojoExecutionException("'mvn clean package' failed with exit code: " + result.getExitCode());
-        } catch (MavenInvocationException e) {
-            throw new MojoExecutionException("Error running maven", e);
+    private void deleteRecursive(Path path) throws IOException {
+        if (!Files.exists(path)) return;
+        try (Stream<Path> walk = Files.walk(path)) {
+            walk.sorted(Comparator.reverseOrder()).forEach(p -> {
+                try {
+                    Files.delete(p);
+                } catch (IOException e) {
+                    getLog().warn("Failed to delete " + p, e);
+                }
+            });
         }
     }
 
+    private void downloadPlugin(PluginConfig plugin, Path pluginDir) throws IOException, InterruptedException {
+        Path out = pluginDir.resolve(plugin.name.endsWith(".jar") ? plugin.name : plugin.name + ".jar");
+        getLog().info("Downloading additional plugin: " + plugin.name + " from " + plugin.url);
+        HTTP.send(HttpRequest.newBuilder().uri(URI.create(plugin.url)).build(), HttpResponse.BodyHandlers.ofFile(out));
+    }
+
     private static class PluginConfig {
+        @Parameter(required = true)
         public String name;
+        @Parameter(required = true)
         public String url;
     }
 }
