@@ -129,7 +129,9 @@ public class TestServerMojo extends AbstractMojo {
     }
 
     private Path findPluginJar() throws IOException {
+        getLog().info("Looking for plugin JAR in " + targetDir);
         try (Stream<Path> files = Files.walk(targetDir.toPath())) {
+            getLog().info("Looking for plugin JAR in " + targetDir);
             return files.filter(f -> f.getFileName().toString().endsWith(".jar")).findFirst().orElseThrow(() -> new RuntimeException("No plugin .jar found in " + targetDir));
         }
     }
