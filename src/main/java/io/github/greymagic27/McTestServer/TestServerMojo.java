@@ -27,6 +27,7 @@ import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
+import org.jspecify.annotations.NonNull;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -199,9 +200,27 @@ public class TestServerMojo extends AbstractMojo {
     }
 
     private void handleConsole(Process process) {
-        new Thread(() -> {
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream())); BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(process.getOutputStream()))) {
-                String line;
+        Thread consoleThread = new Thread(() -> {
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream())); BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(process.getOutputStream())); BufferedReader userInput = new BufferedReader(new InputStreamReader(System.in))) {
+                Thread outputThread = getThread(reader, writer);
+                outputThread.start();
+                String input;
+                while ((input = userInput.readLine()) != null) {
+                    writer.write(input + "\n");
+                    writer.flush();
+                }
+            } catch (IOException e) {
+                getLog().error("Console handling error", e);
+            }
+        });
+        consoleThread.setDaemon(true);
+        consoleThread.start();
+    }
+
+    private @NonNull Thread getThread(BufferedReader reader, BufferedWriter writer) {
+        Thread outputThread = new Thread(() -> {
+            String line;
+            try {
                 while ((line = reader.readLine()) != null) {
                     System.out.println(line);
                     if (line.contains("Done (")) {
@@ -210,9 +229,11 @@ public class TestServerMojo extends AbstractMojo {
                     }
                 }
             } catch (IOException e) {
-                getLog().error("Console error", e);
+                getLog().error("Error reading server output", e);
             }
-        }).start();
+        });
+        outputThread.setDaemon(true);
+        return outputThread;
     }
 
     private void deleteRecursive(Path path) throws IOException {
