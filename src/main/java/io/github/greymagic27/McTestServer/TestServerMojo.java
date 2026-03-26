@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Stream;
+import javax.inject.Inject;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.BuildPluginManager;
@@ -55,7 +56,7 @@ public class TestServerMojo extends AbstractMojo {
     private MavenProject project;
     @Parameter
     private String serverVersion;
-    @Parameter(defaultValue = "${pluginManager}", readonly = true, required = true)
+    @Inject
     private BuildPluginManager pluginManager;
 
     @Override
@@ -187,17 +188,10 @@ public class TestServerMojo extends AbstractMojo {
 
     private void packagePlugin() throws MojoExecutionException {
         Path pluginJar = targetDir.toPath().resolve(finalName + ".jar");
-        List<String> goals = session.getGoals();
-        if (Files.exists(pluginJar)) {
-            getLog().warn("Plugin JAR already exists: " + pluginJar);
-            return;
-        }
-        if (!Files.exists(pluginJar) && !goals.contains("package")) {
-            getLog().warn("Plugin JAR not found, running 'mvn clean package'");
-            executeMojo(plugin(groupId("org.apache.maven.plugins"), artifactId("maven-clean-plugin"), version("3.5.0")), goal("clean"), configuration(), executionEnvironment(project, session, pluginManager));
-            executeMojo(plugin(groupId("org.apache.maven.plugins"), artifactId("maven-jar-plugin"), version("3.5.0")), goal("package"), configuration(), executionEnvironment(project, session, pluginManager));
-        }
-        if (!Files.exists(pluginJar)) throw new MojoExecutionException("Plugin JAR still not found after 'mvn clean package: '" + pluginJar);
+        getLog().warn("Running 'mvn clean package: '" + pluginJar);
+        executeMojo(plugin(groupId("org.apache.maven.plugins"), artifactId("maven-clean-plugin"), version("3.5.0")), goal("clean"), configuration(), executionEnvironment(project, session, pluginManager));
+        executeMojo(plugin(groupId("org.apache.maven.plugins"), artifactId("maven-jar-plugin"), version("3.5.0")), goal("package"), configuration(), executionEnvironment(project, session, pluginManager));
+        if (!Files.exists(pluginJar)) throw new MojoExecutionException("Plugin JAR not found after 'mvn clean package: '" + pluginJar);
         getLog().info("Plugin JAR packaged: " + pluginJar);
     }
 
