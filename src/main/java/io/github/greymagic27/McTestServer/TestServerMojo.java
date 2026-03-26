@@ -64,10 +64,8 @@ public class TestServerMojo extends AbstractMojo {
     public void execute() throws MojoExecutionException {
         try {
             run();
-        } catch (IOException | InterruptedException e) {
+        } catch (IOException | InterruptedException | ExecutionException e) {
             throw new MojoExecutionException("Failed to run test server", e);
-        } catch (ExecutionException e) {
-            throw new RuntimeException(e);
         }
     }
 
