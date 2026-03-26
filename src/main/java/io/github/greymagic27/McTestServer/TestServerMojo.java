@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.jar.JarFile;
 import java.util.stream.Stream;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
@@ -125,7 +126,14 @@ public class TestServerMojo extends AbstractMojo {
     private Path findPluginJar() throws IOException {
         Path base = project.getBasedir().toPath();
         try (Stream<Path> files = Files.walk(base)) {
-            return files.filter(f -> f.getFileName().toString().endsWith(".jar")).filter(f -> f.getParent().getFileName().toString().equals("target")).findFirst().orElseThrow(() -> new IOException("No plugin JAR found in any target folder under " + base));
+            return files.filter(f -> f.getFileName().toString().endsWith(".jar")).filter(f -> {
+                try (JarFile jar = new JarFile(f.toFile())) {
+                    return jar.getEntry("plugin.yml") != null || jar.getEntry("paper-plugin.yml") != null;
+                } catch (IOException e) {
+                    return false;
+                }
+
+            }).findFirst().orElseThrow(() -> new IOException("No valid plugin JAR with plugin.yml found in project directories under " + base));
         }
     }
 
