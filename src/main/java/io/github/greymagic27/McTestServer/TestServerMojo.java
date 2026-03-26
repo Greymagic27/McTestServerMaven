@@ -142,11 +142,15 @@ public class TestServerMojo extends AbstractMojo {
         JsonNode versions = root.get("versions");
         List<String> stableVersions = new ArrayList<>();
         for (JsonNode v : versions) {
-            if (v.isString() && isStableVersion(v.asString())) {
-                stableVersions.add(v.asString());
+            if (v.isString()) {
+                String version = v.asString();
+                if (isStableVersion(version)) stableVersions.add(version);
             }
         }
         stableVersions.sort((v1, v2) -> compareVersions(v2, v1));
+        for (JsonNode v : versions) {
+            getLog().info("Found version: " + v);
+        }
         String latest = stableVersions.getFirst();
         getLog().info("Latest PaperMC version: " + latest);
         return latest;
