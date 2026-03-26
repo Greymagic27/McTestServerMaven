@@ -107,9 +107,12 @@ public class TestServerMojo extends AbstractMojo {
         pb.redirectErrorStream(true);
         Process serverProcess = pb.start();
         handleConsole(serverProcess);
-        int exitCode = serverProcess.waitFor();
-        if (exitCode != 0) throw new MojoExecutionException("Test server failed to start, exit code: " + exitCode);
-        deleteRecursive(tempServerDir);
+        try {
+            int exitCode = serverProcess.waitFor();
+            if (exitCode != 0) throw new MojoExecutionException("Test server failed to start, exit code: " + exitCode);
+        } finally {
+            deleteRecursive(tempServerDir);
+        }
     }
 
     private void packagePlugin() throws IOException, InterruptedException {
