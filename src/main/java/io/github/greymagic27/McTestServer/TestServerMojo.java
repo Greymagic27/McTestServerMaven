@@ -185,6 +185,7 @@ public class TestServerMojo extends AbstractMojo {
         InvocationRequest request = new DefaultInvocationRequest();
         request.setBaseDirectory(project.getBasedir());
         request.setGoals(Arrays.asList("clean", "package"));
+        request.setBatchMode(true);
         try {
             InvocationResult result = invoker.execute(request);
             if (result.getExitCode() != 0) throw new MojoExecutionException("'mvn clean package' failed with exit code: " + result.getExitCode());

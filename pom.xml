@@ -9,7 +9,7 @@
     <version>1.0.0</version>
     <packaging>maven-plugin</packaging>
     <name>io.github.greymagic27.McTestServer</name>
-    <description>A utility to check dependency and plugin versions on start of a program</description>
+    <description>A utility to run a test MC server when developing plugins</description>
     <url>https://github.com/Greymagic27/McTestServer</url>
 
     <properties>
@@ -63,7 +63,7 @@
             <groupId>org.apache.maven.shared</groupId>
             <artifactId>maven-invoker</artifactId>
             <version>3.3.0</version>
-            <scope>provided</scope>
+            <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>tools.jackson.core</groupId>
@@ -88,6 +88,23 @@
                         <goals>
                             <goal>descriptor</goal>
                         </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.6.2</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <minimizeJar>true</minimizeJar>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>
