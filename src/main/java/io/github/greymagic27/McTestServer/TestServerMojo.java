@@ -153,9 +153,6 @@ public class TestServerMojo extends AbstractMojo {
             }
         }
         stableVersions.sort((v1, v2) -> compareVersions(v2, v1));
-        for (JsonNode v : versions) {
-            getLog().info("Found version: " + v);
-        }
         String latest = stableVersions.getFirst();
         getLog().info("Latest PaperMC version: " + latest);
         return latest;
