@@ -104,20 +104,7 @@ public class TestServerMojo extends AbstractMojo {
         Path pluginJar = findPluginJar();
         if (pluginJar == null) throw new RuntimeException("Plugin JAR not found after packaging");
         Files.copy(pluginJar, pluginDir.resolve(pluginJar.getFileName()), StandardCopyOption.REPLACE_EXISTING);
-        if (pluginJar.getFileName().toString().contains("advanced-achievements-plugin") && AACH) {
-            getLog().info("Applying custom config for advanced-achievements-plugin due to AACH=true...");
-            AACH_CUSTOM_CONFIG.applyCustomConfig(pluginDir);
-            AACH_CUSTOM_CONFIG.setRestrictCreativeAACH(pluginDir);
-            AACH_CUSTOM_CONFIG.addDisabledCategoriesAACH(pluginDir, List.of("JobsReborn"));
-            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                try {
-                    AACH_CUSTOM_CONFIG.restoreOriginalConfig(pluginDir);
-                    getLog().info("Restored original advanced-achievements-plugin config.yml");
-                } catch (IOException e) {
-                    getLog().error("Failed to restore advanced-achievements-plugin config.yml", e);
-                }
-            }));
-        }
+        aachMode(pluginJar, pluginDir);
         for (PluginConfig plugin : additionalPlugins) downloadPlugin(plugin, pluginDir);
         Path paperJar = paperFuture.get();
         Files.writeString(tempServerDir.resolve("eula.txt"), "eula=true\n", StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
@@ -132,6 +119,23 @@ public class TestServerMojo extends AbstractMojo {
             if (exitCode != 0) throw new MojoExecutionException("Test server failed to start, exit code: " + exitCode);
         } finally {
             deleteRecursive(tempServerDir);
+        }
+    }
+
+    private void aachMode(Path pluginJar, Path pluginDir) throws IOException {
+        if (pluginJar.getFileName().toString().contains("advanced-achievements-plugin") && AACH) {
+            getLog().info("Applying custom config for advanced-achievements-plugin due to AACH=true...");
+            AACH_CUSTOM_CONFIG.applyCustomConfig(pluginDir);
+            AACH_CUSTOM_CONFIG.setRestrictCreativeAACH(pluginDir);
+            AACH_CUSTOM_CONFIG.addDisabledCategoriesAACH(pluginDir, List.of("JobsReborn"));
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                try {
+                    AACH_CUSTOM_CONFIG.restoreOriginalConfig(pluginDir);
+                    getLog().info("Restored original advanced-achievements-plugin config.yml");
+                } catch (IOException e) {
+                    getLog().error("Failed to restore advanced-achievements-plugin config.yml", e);
+                }
+            }));
         }
     }
 
