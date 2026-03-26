@@ -18,7 +18,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Stream;
-import org.apache.maven.cli.MavenCli;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
@@ -171,14 +170,21 @@ public class TestServerMojo extends AbstractMojo {
         }).start();
     }
 
-    private void packagePlugin() throws MojoExecutionException {
+    private void packagePlugin() throws MojoExecutionException, IOException, InterruptedException {
         Path pluginJar = targetDir.toPath().resolve(finalName + ".jar");
         getLog().warn("Running 'mvn clean package: '" + pluginJar);
-        MavenCli cli = new MavenCli();
-        int result = cli.doMain(new String[]{"clean", "package"}, project.getBasedir().getAbsolutePath(), System.out, System.out);
+        ProcessBuilder pb = new ProcessBuilder("mvn", "clean", "package");
+        pb.directory(project.getBasedir());
+        pb.redirectErrorStream(true);
+        Process process = pb.start();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                getLog().info(line);
+            }
+        }
+        int result = process.waitFor();
         if (result != 0) throw new MojoExecutionException("'mvn clean package' failed with exit code: " + result);
-        if (!Files.exists(pluginJar)) throw new MojoExecutionException("Plugin JaR not found after 'mvn clean package': " + pluginJar);
-        getLog().info("Plugin JAR packaged: " + pluginJar);
     }
 
     private static class PluginConfig {
