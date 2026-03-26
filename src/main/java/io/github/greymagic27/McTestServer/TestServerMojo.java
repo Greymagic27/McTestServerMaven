@@ -2,7 +2,6 @@ package io.github.greymagic27.McTestServer;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
@@ -44,9 +43,6 @@ public class TestServerMojo extends AbstractMojo {
 
     @Parameter(defaultValue = "${project}", readonly = true)
     private MavenProject project;
-
-    @Parameter(defaultValue = "${project.build.directory}", readonly = true)
-    private File targetDir;
 
     private static boolean isStableVersion(String v) {
         return !v.contains("-");
