@@ -84,7 +84,7 @@ public class TestServerMojo extends AbstractMojo {
         getLog().info("Temp server directory: " + tempServerDir);
         String pluginVersion = project.getProperties().getProperty("revision");
         if (pluginVersion == null || pluginVersion.isBlank()) pluginVersion = project.getVersion();
-        getLog().info("Resolved plugin version: " + pluginVersion);
+        getLog().info("Detected plugin version: " + pluginVersion);
         Path pluginDir = tempServerDir.resolve("plugins");
         Files.createDirectories(pluginDir);
         String mcVersion = (serverVersion != null && !serverVersion.isBlank()) ? serverVersion : fetchLatestVersion();
@@ -293,14 +293,24 @@ public class TestServerMojo extends AbstractMojo {
         HTTP.send(HttpRequest.newBuilder().uri(URI.create(plugin.pluginUrl)).build(), HttpResponse.BodyHandlers.ofFile(out));
     }
 
-    private String detectBuildTool() {
+    private String detectBuildTool() throws InterruptedException, IOException {
         Path base = project.getBasedir().toPath();
         if (Files.exists(base.resolve("pom.xml"))) {
-            getLog().info("Detected maven");
+            Process process = new ProcessBuilder("mvn", "-v").start();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                String line = reader.readLine();
+                if (line != null) getLog().info("Detected Maven: " + line);
+            }
+            process.waitFor(5, TimeUnit.SECONDS);
             return "maven";
         }
         if (Files.exists(base.resolve("build.gradle")) || Files.exists(base.resolve("build.gradle.kts"))) {
-            getLog().info("Detected gradle");
+            Process process = new ProcessBuilder("gradle", "--version").start();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                String line = reader.readLine();
+                if (line != null) getLog().info("Detected Gradle version: " + line);
+            }
+            process.waitFor(5, TimeUnit.SECONDS);
             return "gradle";
         }
         throw new RuntimeException("No build tool detected in " + base);
