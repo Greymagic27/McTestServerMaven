@@ -293,24 +293,14 @@ public class TestServerMojo extends AbstractMojo {
         HTTP.send(HttpRequest.newBuilder().uri(URI.create(plugin.pluginUrl)).build(), HttpResponse.BodyHandlers.ofFile(out));
     }
 
-    private String detectBuildTool() throws InterruptedException, IOException {
+    private String detectBuildTool() {
         Path base = project.getBasedir().toPath();
         if (Files.exists(base.resolve("pom.xml"))) {
-            Process process = new ProcessBuilder("mvn", "-v").start();
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-                String line = reader.readLine();
-                if (line != null) getLog().info("Detected Maven: " + line);
-            }
-            process.waitFor(5, TimeUnit.SECONDS);
+            getLog().info("Detected maven");
             return "maven";
         }
         if (Files.exists(base.resolve("build.gradle")) || Files.exists(base.resolve("build.gradle.kts"))) {
-            Process process = new ProcessBuilder("gradle", "--version").start();
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-                String line = reader.readLine();
-                if (line != null) getLog().info("Detected Gradle version: " + line);
-            }
-            process.waitFor(5, TimeUnit.SECONDS);
+            getLog().info("Detected gradle");
             return "gradle";
         }
         throw new RuntimeException("No build tool detected in " + base);
