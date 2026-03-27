@@ -130,7 +130,7 @@ public class TestServerMojo extends AbstractMojo {
 
     private void aachMode(Path pluginJar, Path pluginDir) throws IOException {
         if (pluginJar.getFileName().toString().contains("advanced-achievements-plugin") && AACH) {
-            getLog().info("Applying custom config for advanced-achievements-plugin due to AACH=true...");
+            getLog().warn("Applying custom config for advanced-achievements-plugin due to AACH=true");
             AACH_CUSTOM_CONFIG.applyCustomConfig(pluginDir);
             AACH_CUSTOM_CONFIG.setRestrictCreativeAACH(pluginDir);
             AACH_CUSTOM_CONFIG.addDisabledCategoriesAACH(pluginDir, List.of("JobsReborn"));
@@ -150,11 +150,11 @@ public class TestServerMojo extends AbstractMojo {
         Path pluginProjectDir = project.getBasedir().toPath().resolve(".");
         ProcessBuilder pb;
         if ("maven".equalsIgnoreCase(buildTool)) {
-            getLog().info("Packaging plugin using Maven...");
+            getLog().info("Packaging plugin using Maven");
             String mvnCmd = System.getProperty("os.name").toLowerCase().contains("win") ? "mvn.cmd" : "mvn";
             pb = new ProcessBuilder(mvnCmd, "clean", "package");
         } else if ("gradle".equalsIgnoreCase(buildTool)) {
-            getLog().info("Packaging plugin using Gradle...");
+            getLog().info("Packaging plugin using Gradle");
             String gradleCmd = System.getProperty("os.name").toLowerCase().contains("win") ? "gradle.bat" : "gradle";
             pb = new ProcessBuilder(gradleCmd, "shadowJar");
         } else {
@@ -262,7 +262,6 @@ public class TestServerMojo extends AbstractMojo {
                     System.out.println(line);
                     if (line.contains("Done (")) {
                         writer.write("op Greymagic27\n");
-                        writer.write("gamemode creative Greymagic27\n");
                         writer.flush();
                     }
                 }
@@ -309,7 +308,7 @@ public class TestServerMojo extends AbstractMojo {
     private void stopServer() {
         if (serverProcess != null && serverProcess.isAlive()) {
             try {
-                getLog().warn("Stopping server...");
+                getLog().warn("Stopping server");
                 BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(serverProcess.getOutputStream()));
                 writer.write("stop\n");
                 writer.flush();
