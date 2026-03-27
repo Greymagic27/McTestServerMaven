@@ -51,7 +51,7 @@ public class TestServerMojo extends AbstractMojo {
     @Parameter(defaultValue = "${project}", readonly = true)
     private MavenProject project;
 
-    @Parameter(defaultValue = "false", property = "false")
+    @Parameter(defaultValue = "false")
     private boolean AACH;
 
     private static boolean isStableVersion(String v) {
@@ -156,7 +156,14 @@ public class TestServerMojo extends AbstractMojo {
         } else if ("gradle".equalsIgnoreCase(buildTool)) {
             getLog().info("Packaging plugin using Gradle");
             String gradleCmd = System.getProperty("os.name").toLowerCase().contains("win") ? "gradle.bat" : "gradle";
-            pb = new ProcessBuilder(gradleCmd, "shadowJar");
+            boolean hasShadow = hasShadowPlugin(pluginProjectDir);
+            if (hasShadow) {
+                getLog().info("Shadow plugin detected, using shadowJar");
+                pb = new ProcessBuilder(gradleCmd, "shadowJar");
+            } else {
+                getLog().info("Shadow plugin not found. Using gradle build");
+                pb = new ProcessBuilder(gradleCmd, "build");
+            }
         } else {
             throw new RuntimeException("Unknown build tool: " + buildTool);
         }
@@ -172,15 +179,17 @@ public class TestServerMojo extends AbstractMojo {
 
     private Path findPluginJar() throws IOException {
         Path base = project.getBasedir().toPath();
-        try (Stream<Path> files = Files.walk(base)) {
+        Path buildDir = base.resolve("target");
+        if (!Files.exists(buildDir)) buildDir = base.resolve("build");
+        try (Stream<Path> files = Files.walk(buildDir)) {
+            Path finalBuildDir = buildDir;
             return files.filter(f -> f.getFileName().toString().endsWith(".jar")).filter(f -> {
                 try (JarFile jar = new JarFile(f.toFile())) {
                     return jar.getEntry("plugin.yml") != null || jar.getEntry("paper-plugin.yml") != null;
                 } catch (IOException e) {
                     return false;
                 }
-
-            }).findFirst().orElseThrow(() -> new IOException("No valid plugin JAR with plugin.yml found in project directories under " + base));
+            }).max(Comparator.comparingLong(f -> f.toFile().lastModified())).orElseThrow(() -> new IOException("No valid plugin JAR found in " + finalBuildDir));
         }
     }
 
@@ -325,6 +334,23 @@ public class TestServerMojo extends AbstractMojo {
 
     private void openFolder(Path folder) throws IOException {
         new ProcessBuilder("explorer.exe", folder.toAbsolutePath().toString()).start();
+    }
+
+    private boolean hasShadowPlugin(Path projectDir) {
+        try {
+            Path groovy = projectDir.resolve("build.gradle");
+            Path kotlin = projectDir.resolve("build.gradle.kts");
+            List<Path> files = new ArrayList<>();
+            if (Files.exists(groovy)) files.add(groovy);
+            if (Files.exists(kotlin)) files.add(kotlin);
+            for (Path file : files) {
+                String content = Files.readString(file);
+                if (content.contains("com.gradleup.shadow") || content.contains("id \"com.gradleup.shadow\"") || content.contains("id(\"com.gradleup.shadow\")")) return true;
+            }
+        } catch (IOException e) {
+            getLog().error("Failed to read build files for Shadow plugin detection", e);
+        }
+        return false;
     }
 
     public static class Plugin {
