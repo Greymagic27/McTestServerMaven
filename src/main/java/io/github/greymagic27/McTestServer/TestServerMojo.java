@@ -41,8 +41,11 @@ public class TestServerMojo extends AbstractMojo {
     @Parameter
     private String serverVersion;
 
+    /**
+     * Additional plugins to download into the test server.
+     */
     @Parameter
-    private List<PluginConfig> additionalPlugins = new ArrayList<>();
+    private List<PluginConfig> additionalPlugins;
 
     @Parameter(defaultValue = "${project}", readonly = true)
     private MavenProject project;
@@ -323,8 +326,14 @@ public class TestServerMojo extends AbstractMojo {
     }
 
     private static class PluginConfig {
+        /**
+         * The file name of the plugin jar.
+         */
         @Parameter(required = true)
         public String pluginName;
+        /**
+         * Direct download URL for the plugin jar.
+         */
         @Parameter(required = true)
         public String pluginUrl;
     }
