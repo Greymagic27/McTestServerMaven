@@ -43,9 +43,7 @@ public class TestServerMojo extends AbstractMojo {
 
     /**
      * Additional plugins to download into the test server.
-     * Usage:
-     * <pluginName></pluginName>
-     * <pluginUrl></pluginUrl>
+     * Usage: pluginName / pluginUrl
      */
     @Parameter(name = "additionalPlugins")
     private List<Plugin> additionalPlugins;
@@ -108,7 +106,6 @@ public class TestServerMojo extends AbstractMojo {
             throw new MojoExecutionException("Async task failed", e.getCause());
         }
         Path pluginJar = findPluginJar();
-        if (pluginJar == null) throw new RuntimeException("Plugin JAR not found after packaging");
         Files.copy(pluginJar, pluginDir.resolve(pluginJar.getFileName()), StandardCopyOption.REPLACE_EXISTING);
         aachMode(pluginJar, pluginDir);
         for (Plugin plugin : additionalPlugins) downloadPlugin(plugin, pluginDir);
