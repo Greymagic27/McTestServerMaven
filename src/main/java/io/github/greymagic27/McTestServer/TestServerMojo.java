@@ -45,7 +45,7 @@ public class TestServerMojo extends AbstractMojo {
      * Additional plugins to download into the test server.
      */
     @Parameter
-    private List<PluginConfig> additionalPlugins;
+    private List<Plugin> additionalPlugins;
 
     @Parameter(defaultValue = "${project}", readonly = true)
     private MavenProject project;
@@ -108,7 +108,7 @@ public class TestServerMojo extends AbstractMojo {
         if (pluginJar == null) throw new RuntimeException("Plugin JAR not found after packaging");
         Files.copy(pluginJar, pluginDir.resolve(pluginJar.getFileName()), StandardCopyOption.REPLACE_EXISTING);
         aachMode(pluginJar, pluginDir);
-        for (PluginConfig plugin : additionalPlugins) downloadPlugin(plugin, pluginDir);
+        for (Plugin plugin : additionalPlugins) downloadPlugin(plugin, pluginDir);
         Path paperJar = paperFuture.get();
         Files.writeString(tempServerDir.resolve("eula.txt"), "eula=true\n", StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
         ProcessBuilder pb = new ProcessBuilder("java", "-Xmx2G", "-jar", paperJar.toString(), "nogui");
@@ -284,7 +284,7 @@ public class TestServerMojo extends AbstractMojo {
         }
     }
 
-    private void downloadPlugin(PluginConfig plugin, Path pluginDir) throws IOException, InterruptedException {
+    private void downloadPlugin(Plugin plugin, Path pluginDir) throws IOException, InterruptedException {
         Path out = pluginDir.resolve(plugin.pluginName.endsWith(".jar") ? plugin.pluginName : plugin.pluginName + ".jar");
         getLog().info("Downloading additional plugin: " + plugin.pluginName + " from " + plugin.pluginUrl);
         HTTP.send(HttpRequest.newBuilder().uri(URI.create(plugin.pluginUrl)).build(), HttpResponse.BodyHandlers.ofFile(out));
@@ -325,7 +325,7 @@ public class TestServerMojo extends AbstractMojo {
         new ProcessBuilder("explorer.exe", folder.toAbsolutePath().toString()).start();
     }
 
-    private static class PluginConfig {
+    private static class Plugin {
         /**
          * The file name of the plugin jar.
          */
