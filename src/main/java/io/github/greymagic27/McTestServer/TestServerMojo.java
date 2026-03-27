@@ -82,6 +82,9 @@ public class TestServerMojo extends AbstractMojo {
     private void run() throws IOException, InterruptedException, ExecutionException, MojoExecutionException {
         Path tempServerDir = Files.createTempDirectory("mc-server-");
         getLog().info("Temp server directory: " + tempServerDir);
+        String pluginVersion = project.getProperties().getProperty("revision");
+        if (pluginVersion == null || pluginVersion.isBlank()) pluginVersion = project.getVersion();
+        getLog().info("Resolved plugin version: " + pluginVersion);
         Path pluginDir = tempServerDir.resolve("plugins");
         Files.createDirectories(pluginDir);
         String mcVersion = (serverVersion != null && !serverVersion.isBlank()) ? serverVersion : fetchLatestVersion();
