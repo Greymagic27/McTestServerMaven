@@ -46,7 +46,7 @@ public class TestServerMojo extends AbstractMojo {
      * Usage: pluginName / pluginUrl
      */
     @Parameter(name = "additionalPlugins")
-    private List<Plugin> additionalPlugins;
+    private List<Plugin> additionalPlugins = new ArrayList<>();
 
     @Parameter(defaultValue = "${project}", readonly = true)
     private MavenProject project;
