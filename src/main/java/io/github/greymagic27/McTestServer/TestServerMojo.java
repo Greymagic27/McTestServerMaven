@@ -43,8 +43,11 @@ public class TestServerMojo extends AbstractMojo {
 
     /**
      * Additional plugins to download into the test server.
+     * Usage:
+     * <pluginName></pluginName>
+     * <pluginUrl></pluginUrl>
      */
-    @Parameter(name = "additionalPlugin")
+    @Parameter(name = "additionalPlugins")
     private List<Plugin> additionalPlugins;
 
     @Parameter(defaultValue = "${project}", readonly = true)
