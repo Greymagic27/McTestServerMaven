@@ -282,9 +282,9 @@ public class TestServerMojo extends AbstractMojo {
     }
 
     private void downloadPlugin(PluginConfig plugin, Path pluginDir) throws IOException, InterruptedException {
-        Path out = pluginDir.resolve(plugin.name.endsWith(".jar") ? plugin.name : plugin.name + ".jar");
-        getLog().info("Downloading additional plugin: " + plugin.name + " from " + plugin.url);
-        HTTP.send(HttpRequest.newBuilder().uri(URI.create(plugin.url)).build(), HttpResponse.BodyHandlers.ofFile(out));
+        Path out = pluginDir.resolve(plugin.pluginName.endsWith(".jar") ? plugin.pluginName : plugin.pluginName + ".jar");
+        getLog().info("Downloading additional plugin: " + plugin.pluginName + " from " + plugin.pluginUrl);
+        HTTP.send(HttpRequest.newBuilder().uri(URI.create(plugin.pluginUrl)).build(), HttpResponse.BodyHandlers.ofFile(out));
     }
 
     private String detectBuildTool() {
@@ -324,8 +324,8 @@ public class TestServerMojo extends AbstractMojo {
 
     private static class PluginConfig {
         @Parameter(required = true)
-        public String name;
+        public String pluginName;
         @Parameter(required = true)
-        public String url;
+        public String pluginUrl;
     }
 }
