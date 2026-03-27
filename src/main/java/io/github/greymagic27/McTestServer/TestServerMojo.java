@@ -325,7 +325,7 @@ public class TestServerMojo extends AbstractMojo {
         new ProcessBuilder("explorer.exe", folder.toAbsolutePath().toString()).start();
     }
 
-    private static class Plugin {
+    public static class Plugin {
         /**
          * The file name of the plugin jar.
          */
