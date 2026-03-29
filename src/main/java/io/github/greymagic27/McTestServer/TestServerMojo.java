@@ -103,16 +103,12 @@ public class TestServerMojo extends AbstractMojo {
                 throw new RuntimeException("Failed to download PaperMC", e);
             }
         });
-        try {
-            CompletableFuture.allOf(packageFuture, paperFuture).join();
-        } catch (RuntimeException e) {
-            throw new MojoExecutionException("Async task failed", e.getCause());
-        }
+        packageFuture.join();
         Path pluginJar = findPluginJar();
         Files.copy(pluginJar, pluginDir.resolve(pluginJar.getFileName()), StandardCopyOption.REPLACE_EXISTING);
         aachMode(pluginJar, pluginDir);
         for (Plugin plugin : additionalPlugins) downloadPlugin(plugin, pluginDir);
-        Path paperJar = paperFuture.get();
+        Path paperJar = paperFuture.join();
         Files.writeString(tempServerDir.resolve("eula.txt"), "eula=true\n", StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
         ProcessBuilder pb = new ProcessBuilder("java", "-Xmx2G", "-jar", paperJar.toString(), "nogui");
         pb.directory(tempServerDir.toFile());
@@ -168,17 +164,31 @@ public class TestServerMojo extends AbstractMojo {
 
     private Path findPluginJar() throws IOException {
         Path base = project.getBasedir().toPath();
-        Path buildDir = base.resolve("target");
-        if (!Files.exists(buildDir)) buildDir = base.resolve("build");
-        try (Stream<Path> files = Files.walk(buildDir)) {
-            Path finalBuildDir = buildDir;
-            return files.filter(f -> f.getFileName().toString().endsWith(".jar")).filter(f -> {
-                try (JarFile jar = new JarFile(f.toFile())) {
-                    return jar.getEntry("plugin.yml") != null || jar.getEntry("paper-plugin.yml") != null;
-                } catch (IOException e) {
-                    return false;
+        try (Stream<Path> walk = Files.walk(base)) {
+            List<Path> targetDir = walk.filter(Files::isDirectory).filter(p -> p.getFileName().toString().equalsIgnoreCase("target")).toList();
+            if (targetDir.isEmpty()) throw new IOException("No 'target' directory found in project tree starting at: " + base);
+            Path newestJar = null;
+            long newestTime = -1;
+            for (Path target : targetDir) {
+                try (Stream<Path> files = Files.walk(target)) {
+                    for (Path f : files.filter(Files::isRegularFile).toList()) {
+                        String name = f.getFileName().toString();
+                        if (!name.endsWith(".jar")) continue;
+                        try (JarFile jar = new JarFile(f.toFile())) {
+                            if (jar.getEntry("plugin.yml") != null || jar.getEntry("paper-plugin.yml") != null) {
+                                long modTime = f.toFile().lastModified();
+                                if (modTime > newestTime) {
+                                    newestJar = f;
+                                    newestTime = modTime;
+                                }
+                            }
+                        }
+                    }
                 }
-            }).max(Comparator.comparingLong(f -> f.toFile().lastModified())).orElseThrow(() -> new IOException("No valid plugin JAR found in " + finalBuildDir));
+            }
+            if (newestJar == null) throw new IOException("No valid plugin JAR found in any 'target' directory under: " + base);
+            getLog().info("Found plugin jar: " + newestJar);
+            return newestJar;
         }
     }
 
@@ -235,6 +245,11 @@ public class TestServerMojo extends AbstractMojo {
                 String input;
                 while ((input = userInput.readLine()) != null) {
                     input = input.trim();
+                    if ("stop".equalsIgnoreCase(input)) {
+                        getLog().info("Stopping server");
+                        stopServer();
+                        break;
+                    }
                     if ("m".equalsIgnoreCase(input)) {
                         getLog().info("Opening server directory: " + tempServerDir);
                         openFolder(tempServerDir);

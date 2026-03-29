@@ -6,7 +6,7 @@
 
     <groupId>io.github.greymagic27</groupId>
     <artifactId>McTestServer</artifactId>
-    <version>1.0.4</version>
+    <version>1.0.5-SNAPSHOT</version>
     <packaging>maven-plugin</packaging>
     <name>io.github.greymagic27.McTestServer</name>
     <description>A utility to run a test MC server when developing plugins</description>
