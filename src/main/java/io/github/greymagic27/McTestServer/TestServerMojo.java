@@ -35,6 +35,7 @@ public class TestServerMojo extends AbstractMojo {
 
     private static final HttpClient HTTP = HttpClient.newHttpClient();
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static boolean shutdownHookAdded = false;
 
     private Process serverProcess;
 
@@ -114,7 +115,7 @@ public class TestServerMojo extends AbstractMojo {
         pb.directory(tempServerDir.toFile());
         pb.redirectErrorStream(true);
         serverProcess = pb.start();
-        Runtime.getRuntime().addShutdownHook(new Thread(this::stopServer));
+        addShutdownHook();
         handleConsole(serverProcess, tempServerDir);
         try {
             int exitCode = serverProcess.waitFor();
@@ -124,20 +125,21 @@ public class TestServerMojo extends AbstractMojo {
         }
     }
 
+    private void addShutdownHook() {
+        if (!shutdownHookAdded) {
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                if (serverProcess != null && serverProcess.isAlive()) stopServer();
+            }));
+            shutdownHookAdded = true;
+        }
+    }
+
     private void aachMode(Path pluginJar, Path pluginDir) throws IOException {
         if (pluginJar.getFileName().toString().contains("advanced-achievements-plugin") && AACH) {
             getLog().warn("Applying custom config for advanced-achievements-plugin due to AACH=true");
             AACH_CUSTOM_CONFIG.applyCustomConfig(pluginDir);
             AACH_CUSTOM_CONFIG.setRestrictCreativeAACH(pluginDir);
             AACH_CUSTOM_CONFIG.addDisabledCategoriesAACH(pluginDir, List.of("JobsReborn"));
-            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                try {
-                    AACH_CUSTOM_CONFIG.restoreOriginalConfig(pluginDir);
-                    getLog().info("Restored original advanced-achievements-plugin config.yml");
-                } catch (IOException e) {
-                    getLog().error("Failed to restore advanced-achievements-plugin config.yml", e);
-                }
-            }));
         }
     }
 
@@ -156,10 +158,7 @@ public class TestServerMojo extends AbstractMojo {
         pb.inheritIO();
         Process buildProcess = pb.start();
         boolean finished = buildProcess.waitFor(2, TimeUnit.MINUTES);
-        if (!finished || buildProcess.exitValue() != 0) {
-            throw new RuntimeException(buildTool.substring(0, 1).toUpperCase() + buildTool.substring(1) + " build failed");
-        }
-        getLog().info(buildTool.substring(0, 1).toUpperCase() + buildTool.substring(1) + " build completed successfully");
+        if (!finished || buildProcess.exitValue() != 0) throw new RuntimeException(buildTool.substring(0, 1).toUpperCase() + buildTool.substring(1) + " build failed");
     }
 
     private Path findPluginJar() throws IOException {
@@ -246,7 +245,6 @@ public class TestServerMojo extends AbstractMojo {
                 while ((input = userInput.readLine()) != null) {
                     input = input.trim();
                     if ("stop".equalsIgnoreCase(input)) {
-                        getLog().info("Stopping server");
                         stopServer();
                         break;
                     }
@@ -320,13 +318,10 @@ public class TestServerMojo extends AbstractMojo {
                 BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(serverProcess.getOutputStream()));
                 writer.write("stop\n");
                 writer.flush();
-                if (!serverProcess.waitFor(5, TimeUnit.SECONDS)) {
-                    getLog().warn("Server didn't stop in time, killing forcibly");
-                    serverProcess.destroyForcibly();
-                }
-            } catch (IOException | InterruptedException e) {
-                getLog().error("Failed to stop server cleanly, killing forcibly", e);
                 serverProcess.destroyForcibly();
+                serverProcess.waitFor();
+            } catch (IOException | InterruptedException e) {
+                getLog().error("Failed to stop server", e);
             }
         }
     }
