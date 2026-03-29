@@ -11,22 +11,20 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.jar.JarFile;
-import java.util.stream.Stream;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
+import org.codehaus.plexus.util.DirectoryScanner;
+import org.codehaus.plexus.util.FileUtils;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -109,11 +107,11 @@ public class TestServerMojo extends AbstractMojo {
             throw new MojoExecutionException("Async task failed", e.getCause());
         }
         Path pluginJar = findPluginJar();
-        Files.copy(pluginJar, pluginDir.resolve(pluginJar.getFileName()), StandardCopyOption.REPLACE_EXISTING);
+        FileUtils.copyFile(pluginJar.toFile(), pluginDir.resolve(pluginJar.getFileName()).toFile());
         aachMode(pluginJar, pluginDir);
         for (Plugin plugin : additionalPlugins) downloadPlugin(plugin, pluginDir);
         Path paperJar = paperFuture.get();
-        Files.writeString(tempServerDir.resolve("eula.txt"), "eula=true\n", StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+        FileUtils.fileWrite(tempServerDir.resolve("eula.txt").toFile(), "eula=true\n");
         ProcessBuilder pb = new ProcessBuilder("java", "-Xmx2G", "-jar", paperJar.toString(), "nogui");
         pb.directory(tempServerDir.toFile());
         pb.redirectErrorStream(true);
@@ -153,17 +151,6 @@ public class TestServerMojo extends AbstractMojo {
             getLog().info("Packaging plugin using Maven");
             String mvnCmd = System.getProperty("os.name").toLowerCase().contains("win") ? "mvn.cmd" : "mvn";
             pb = new ProcessBuilder(mvnCmd, "clean", "package");
-        } else if ("gradle".equalsIgnoreCase(buildTool)) {
-            getLog().info("Packaging plugin using Gradle");
-            String gradleCmd = System.getProperty("os.name").toLowerCase().contains("win") ? "gradle.bat" : "gradle";
-            boolean hasShadow = hasShadowPlugin(pluginProjectDir);
-            if (hasShadow) {
-                getLog().info("Shadow plugin detected, using shadowJar");
-                pb = new ProcessBuilder(gradleCmd, "shadowJar");
-            } else {
-                getLog().info("Shadow plugin not found. Using gradle build");
-                pb = new ProcessBuilder(gradleCmd, "build");
-            }
         } else {
             throw new RuntimeException("Unknown build tool: " + buildTool);
         }
@@ -181,16 +168,29 @@ public class TestServerMojo extends AbstractMojo {
         Path base = project.getBasedir().toPath();
         Path buildDir = base.resolve("target");
         if (!Files.exists(buildDir)) buildDir = base.resolve("build");
-        try (Stream<Path> files = Files.walk(buildDir)) {
-            Path finalBuildDir = buildDir;
-            return files.filter(f -> f.getFileName().toString().endsWith(".jar")).filter(f -> {
-                try (JarFile jar = new JarFile(f.toFile())) {
-                    return jar.getEntry("plugin.yml") != null || jar.getEntry("paper-plugin.yml") != null;
-                } catch (IOException e) {
-                    return false;
+        if (!Files.exists(buildDir)) throw new IOException("Build directory not found");
+        DirectoryScanner scanner = new DirectoryScanner();
+        scanner.setBasedir(buildDir.toFile());
+        scanner.setIncludes(new String[]{"**/*.jar"});
+        scanner.scan();
+        Path latestJar = null;
+        long latestModified = -1;
+        for (String relativePath : scanner.getIncludedFiles()) {
+            Path jarPath = buildDir.resolve(relativePath);
+            try (JarFile jar = new JarFile(jarPath.toFile())) {
+                if (jar.getEntry("plugin.yml") != null || jar.getEntry("paper-plugin.yml") != null) {
+                    long modified = jarPath.toFile().lastModified();
+                    if (modified > latestModified) {
+                        latestModified = modified;
+                        latestJar = jarPath;
+                    }
                 }
-            }).max(Comparator.comparingLong(f -> f.toFile().lastModified())).orElseThrow(() -> new IOException("No valid plugin JAR found in " + finalBuildDir));
+            } catch (IOException e) {
+                getLog().warn("Failed to read JAR: " + jarPath, e);
+            }
         }
+        if (latestJar == null) throw new IOException("No valid plugin JAR found in " + buildDir);
+        return latestJar;
     }
 
     private String fetchLatestVersion() throws IOException, InterruptedException {
@@ -282,16 +282,12 @@ public class TestServerMojo extends AbstractMojo {
         return outputThread;
     }
 
-    private void deleteRecursive(Path path) throws IOException {
-        if (!Files.exists(path)) return;
-        try (Stream<Path> walk = Files.walk(path)) {
-            walk.sorted(Comparator.reverseOrder()).forEach(p -> {
-                try {
-                    Files.delete(p);
-                } catch (IOException e) {
-                    getLog().warn("Failed to delete " + p, e);
-                }
-            });
+    private void deleteRecursive(Path path) {
+        try {
+            FileUtils.deleteDirectory(path.toFile());
+            getLog().info("Deleted directory: " + path);
+        } catch (IOException e) {
+            getLog().error("Failed to delete: " + path, e);
         }
     }
 
@@ -306,10 +302,6 @@ public class TestServerMojo extends AbstractMojo {
         if (Files.exists(base.resolve("pom.xml"))) {
             getLog().info("Detected maven");
             return "maven";
-        }
-        if (Files.exists(base.resolve("build.gradle")) || Files.exists(base.resolve("build.gradle.kts"))) {
-            getLog().info("Detected gradle");
-            return "gradle";
         }
         throw new RuntimeException("No build tool detected in " + base);
     }
@@ -334,23 +326,6 @@ public class TestServerMojo extends AbstractMojo {
 
     private void openFolder(Path folder) throws IOException {
         new ProcessBuilder("explorer.exe", folder.toAbsolutePath().toString()).start();
-    }
-
-    private boolean hasShadowPlugin(Path projectDir) {
-        try {
-            Path groovy = projectDir.resolve("build.gradle");
-            Path kotlin = projectDir.resolve("build.gradle.kts");
-            List<Path> files = new ArrayList<>();
-            if (Files.exists(groovy)) files.add(groovy);
-            if (Files.exists(kotlin)) files.add(kotlin);
-            for (Path file : files) {
-                String content = Files.readString(file);
-                if (content.contains("com.gradleup.shadow") || content.contains("id \"com.gradleup.shadow\"") || content.contains("id(\"com.gradleup.shadow\")")) return true;
-            }
-        } catch (IOException e) {
-            getLog().error("Failed to read build files for Shadow plugin detection", e);
-        }
-        return false;
     }
 
     public static class Plugin {
