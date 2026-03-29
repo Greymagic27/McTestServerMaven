@@ -6,7 +6,7 @@
 
     <groupId>io.github.greymagic27</groupId>
     <artifactId>McTestServer</artifactId>
-    <version>1.0.5</version>
+    <version>1.0.4</version>
     <packaging>maven-plugin</packaging>
     <name>io.github.greymagic27.McTestServer</name>
     <description>A utility to run a test MC server when developing plugins</description>
@@ -66,16 +66,6 @@
             <scope>compile</scope>
         </dependency>
     </dependencies>
-
-    <dependencyManagement>
-        <dependencies>
-            <dependency>
-                <groupId>org.codehaus.plexus</groupId>
-                <artifactId>plexus-utils</artifactId>
-                <version>4.0.3</version>
-            </dependency>
-        </dependencies>
-    </dependencyManagement>
 
     <build>
         <plugins>

@@ -153,6 +153,17 @@ public class TestServerMojo extends AbstractMojo {
             getLog().info("Packaging plugin using Maven");
             String mvnCmd = System.getProperty("os.name").toLowerCase().contains("win") ? "mvn.cmd" : "mvn";
             pb = new ProcessBuilder(mvnCmd, "clean", "package");
+        } else if ("gradle".equalsIgnoreCase(buildTool)) {
+            getLog().info("Packaging plugin using Gradle");
+            String gradleCmd = System.getProperty("os.name").toLowerCase().contains("win") ? "gradle.bat" : "gradle";
+            boolean hasShadow = hasShadowPlugin(pluginProjectDir);
+            if (hasShadow) {
+                getLog().info("Shadow plugin detected, using shadowJar");
+                pb = new ProcessBuilder(gradleCmd, "shadowJar");
+            } else {
+                getLog().info("Shadow plugin not found. Using gradle build");
+                pb = new ProcessBuilder(gradleCmd, "build");
+            }
         } else {
             throw new RuntimeException("Unknown build tool: " + buildTool);
         }
@@ -296,6 +307,10 @@ public class TestServerMojo extends AbstractMojo {
             getLog().info("Detected maven");
             return "maven";
         }
+        if (Files.exists(base.resolve("build.gradle")) || Files.exists(base.resolve("build.gradle.kts"))) {
+            getLog().info("Detected gradle");
+            return "gradle";
+        }
         throw new RuntimeException("No build tool detected in " + base);
     }
 
@@ -319,6 +334,23 @@ public class TestServerMojo extends AbstractMojo {
 
     private void openFolder(Path folder) throws IOException {
         new ProcessBuilder("explorer.exe", folder.toAbsolutePath().toString()).start();
+    }
+
+    private boolean hasShadowPlugin(Path projectDir) {
+        try {
+            Path groovy = projectDir.resolve("build.gradle");
+            Path kotlin = projectDir.resolve("build.gradle.kts");
+            List<Path> files = new ArrayList<>();
+            if (Files.exists(groovy)) files.add(groovy);
+            if (Files.exists(kotlin)) files.add(kotlin);
+            for (Path file : files) {
+                String content = Files.readString(file);
+                if (content.contains("com.gradleup.shadow") || content.contains("id \"com.gradleup.shadow\"") || content.contains("id(\"com.gradleup.shadow\")")) return true;
+            }
+        } catch (IOException e) {
+            getLog().error("Failed to read build files for Shadow plugin detection", e);
+        }
+        return false;
     }
 
     public static class Plugin {
