@@ -263,8 +263,7 @@ public class TestServerMojo extends AbstractMojo {
                         writer.flush();
                     }
                     if (line.contains("left the game")) {
-                        writer.write("stop\n");
-                        writer.flush();
+                        stopServer();
                         break;
                     }
                 }
