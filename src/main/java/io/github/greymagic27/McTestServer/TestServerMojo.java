@@ -52,9 +52,6 @@ public class TestServerMojo extends AbstractMojo {
     @Parameter(defaultValue = "${project}", readonly = true)
     private MavenProject project;
 
-    @Parameter(defaultValue = "false")
-    private boolean AACH;
-
     private static boolean isStableVersion(String v) {
         return !v.contains("-");
     }
@@ -107,7 +104,6 @@ public class TestServerMojo extends AbstractMojo {
         packageFuture.join();
         Path pluginJar = findPluginJar();
         Files.copy(pluginJar, pluginDir.resolve(pluginJar.getFileName()), StandardCopyOption.REPLACE_EXISTING);
-        aachMode(pluginJar, pluginDir);
         for (Plugin plugin : additionalPlugins) downloadPlugin(plugin, pluginDir);
         Path paperJar = paperFuture.join();
         Files.writeString(tempServerDir.resolve("eula.txt"), "eula=true\n", StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
@@ -131,15 +127,6 @@ public class TestServerMojo extends AbstractMojo {
                 if (serverProcess != null && serverProcess.isAlive()) stopServer();
             }));
             shutdownHookAdded = true;
-        }
-    }
-
-    private void aachMode(Path pluginJar, Path pluginDir) throws IOException {
-        if (pluginJar.getFileName().toString().contains("advanced-achievements-plugin") && AACH) {
-            getLog().warn("Applying custom config for advanced-achievements-plugin due to AACH=true");
-            AACH_CUSTOM_CONFIG.applyCustomConfig(pluginDir);
-            AACH_CUSTOM_CONFIG.setRestrictCreativeAACH(pluginDir);
-            AACH_CUSTOM_CONFIG.addDisabledCategoriesAACH(pluginDir, List.of("JobsReborn"));
         }
     }
 
@@ -274,6 +261,11 @@ public class TestServerMojo extends AbstractMojo {
                     if (line.contains("Done (")) {
                         writer.write("op Greymagic27\n");
                         writer.flush();
+                    }
+                    if (line.contains("left the game")) {
+                        writer.write("stop\n");
+                        writer.flush();
+                        break;
                     }
                 }
             } catch (IOException e) {
