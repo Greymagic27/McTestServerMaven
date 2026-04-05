@@ -36,7 +36,7 @@ public class TestServerMojo extends AbstractMojo {
     private static final HttpClient HTTP = HttpClient.newHttpClient();
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static boolean shutdownHookAdded = false;
-
+    private volatile boolean stopping = false;
     private Process serverProcess;
 
     @Parameter
@@ -303,16 +303,22 @@ public class TestServerMojo extends AbstractMojo {
     }
 
     private void stopServer() {
+        if (stopping) return;
+        stopping = true;
         if (serverProcess != null && serverProcess.isAlive()) {
             try {
-                getLog().warn("Stopping server");
+                getLogger().warn("Stopping server");
                 BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(serverProcess.getOutputStream()));
                 writer.write("stop\n");
                 writer.flush();
-                serverProcess.destroyForcibly();
-                serverProcess.waitFor();
+                boolean exited = serverProcess.waitFor(30, TimeUnit.SECONDS);
+                if (!exited) {
+                    getLogger().warn("Server did not stop after 30 seconds, force killing");
+                    serverProcess.destroyForcibly();
+                    serverProcess.waitFor();
+                }
             } catch (IOException | InterruptedException e) {
-                getLog().error("Failed to stop server", e);
+                getLogger().error("Failed to stop server", e);
             }
         }
     }
