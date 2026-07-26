@@ -16,6 +16,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -49,6 +50,9 @@ public class TestServerMojo extends AbstractMojo {
     @Parameter(name = "additionalPlugins")
     private List<Plugin> additionalPlugins = new ArrayList<>();
 
+    @Parameter(name = "serverProperties")
+    private List<String> serverProperties = new ArrayList<>();
+
     @Parameter(defaultValue = "${project}", readonly = true)
     private MavenProject project;
 
@@ -66,6 +70,13 @@ public class TestServerMojo extends AbstractMojo {
             if (n1 != n2) return Integer.compare(n1, n2);
         }
         return 0;
+    }
+
+    private static ProcessBuilder createPb(Path paperJar, Path tempServerDir) {
+        ProcessBuilder pb = new ProcessBuilder("java", "-Xmx2G", "-XX:+AlwaysPreTouch", "-XX:+DisableExplicitGC", "-XX:+ParallelRefProcEnabled", "-XX:+PerfDisableSharedMem", "-XX:+UnlockExperimentalVMOptions", "-XX:+UseG1GC", "-XX:G1HeapRegionSize=8M", "-XX:G1HeapWastePercent=5", "-XX:G1MaxNewSizePercent=40", "-XX:G1MixedGCCountTarget=4", "-XX:G1MixedGCLiveThresholdPercent=90", "-XX:G1NewSizePercent=30", "-XX:G1RSetUpdatingPauseTimePercent=5", "-XX:G1ReservePercent=20", "-XX:InitiatingHeapOccupancyPercent=15", "-XX:MaxGCPauseMillis=200", "-XX:MaxTenuringThreshold=1", "-XX:SurvivorRatio=32", "-Dusing.aikars.flags=https://mcflags.emc.gs", "-Daikars.new.flags=true", "-jar", paperJar.toString(), "nogui");
+        pb.directory(tempServerDir.toFile());
+        pb.redirectErrorStream(true);
+        return pb;
     }
 
     @Override
@@ -107,9 +118,8 @@ public class TestServerMojo extends AbstractMojo {
         for (Plugin plugin : additionalPlugins) downloadPlugin(plugin, pluginDir);
         Path paperJar = paperFuture.join();
         Files.writeString(tempServerDir.resolve("eula.txt"), "eula=true\n", StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-        ProcessBuilder pb = new ProcessBuilder("java", "-Xmx2G", "-jar", paperJar.toString(), "nogui");
-        pb.directory(tempServerDir.toFile());
-        pb.redirectErrorStream(true);
+        applyServerProperties(tempServerDir);
+        ProcessBuilder pb = createPb(paperJar, tempServerDir);
         serverProcess = pb.start();
         addShutdownHook();
         handleConsole(serverProcess, tempServerDir);
@@ -319,6 +329,31 @@ public class TestServerMojo extends AbstractMojo {
 
     private void openFolder(Path folder) throws IOException {
         new ProcessBuilder("explorer.exe", folder.toAbsolutePath().toString()).start();
+    }
+
+    private void applyServerProperties(Path dir) throws IOException {
+        if (serverProperties.isEmpty()) return;
+        Path props = dir.resolve("server.properties");
+        Properties properties = new Properties();
+        if (Files.exists(props)) {
+            try (var in = Files.newBufferedReader(props)) {
+                properties.load(in);
+            }
+        }
+        for (String entry : serverProperties) {
+            int idx = entry.indexOf('=');
+            if (idx < 0) {
+                getLog().warn("Ignoring malformed serverProperties entry: " + entry);
+                continue;
+            }
+            String key = entry.substring(0, idx).trim();
+            String value = entry.substring(idx + 1).trim();
+            properties.setProperty(key, value);
+            getLog().info("Setting server property: " + key + "=" + value);
+        }
+        try (var out = Files.newBufferedWriter(props)) {
+            properties.store(out, "Minecraft Sever Properties");
+        }
     }
 
     public static class Plugin {
